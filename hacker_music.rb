@@ -63,9 +63,20 @@ before do
   end
   @tune_in_link = "http://#{self.env['SERVER_NAME']}:#{$CONFIG[:shout_station][:port]}/#{$CONFIG[:shout_station][:mount]}"
   @styles = ['reset.css', 'hm.css']
-  @scripts = ['jquery-1.3.2.js']
+  @scripts = ['jquery-1.3.2.js', 'hm.js']
   @scripts << 'audio-player.js' if $CONFIG[:settings][:allow_downloads]
-  @scripts << 'hm.js'
+  @title = $CONFIG[:settings][:title]
+end
+
+def alphabet_list(k)
+  songs = $DB[:songs].map{|i| i[k.to_sym][0,1].downcase}
+  l = []
+  ('a'..'z').each do |i|
+    l <<  { :letter => i, 
+            :have_songs => (songs.include?(i)) 
+          }
+  end
+  return l
 end
 
 get '/search' do
@@ -189,21 +200,24 @@ get '/admin/user/:name/delete' do
 end
 
 get '/title' do
+  @alphabet_list = alphabet_list :title
   haml :browse_by_title
 end
 
 get '/title/:letter' do
+  @alphabet_list = alphabet_list :title
   @songs = $DB[:songs].grep([:title], ["#{params[:letter]}%", {:case_insensitive => true}])
   haml :browse_by_title
 end
 
 get '/artist/list' do
-  @artists = $DB[:songs].group_by(:artist)
+  @alphabet_list = alphabet_list :artist
   haml :browse_by_artist
 end
 
 get '/artist/list/:letter' do
   # Required for category_list.haml
+  @alphabet_list = alphabet_list :artist
   @field = :artist
   @list = $DB[:songs].grep([:artist], ["#{params[:letter]}%", {:case_insensitive => true}]).group_by(:artist)
   #@list = $DB[:songs].grep([:artist], ["[0-9]%"]).group_by(:artist)
@@ -211,6 +225,7 @@ get '/artist/list/:letter' do
 end
 
 get '/artist/view/:artist' do
+  @alphabet_list = alphabet_list :artist
   @artist = params[:artist]
   @songs = $DB[:songs].grep([:artist], ["#{params[:artist]}", {:case_insensitive => true}])
   @albums = $DB[:songs].grep([:artist], ["#{params[:artist]}", {:case_insensitive => true}]).group_by(:album)
@@ -218,17 +233,19 @@ get '/artist/view/:artist' do
 end
 
 get '/album/list' do
-  @albums = $DB[:songs].group_by(:album)
+  @alphabet_list = alphabet_list :album
   haml :browse_by_album
 end
 
 get '/album/list/:letter' do
+  @alphabet_list = alphabet_list :album
   @field = :album
   @list = $DB[:songs].grep([:album], ["#{params[:letter]}%", {:case_insensitive => true}]).group_by(:album)
   haml :browse_by_album
 end
 
 get '/album/view/:album' do
+  @alphabet_list = alphabet_list :album
   @album = params[:album]
   @songs = $DB[:songs].grep([:album], ["#{params[:album]}", {:case_insensitive => true}])
   haml :browse_by_album
@@ -279,7 +296,7 @@ get %r{/genre/(.*)} do |g|
 end
 
 get '/year' do
-  @tags = $DB[:songs].select(:COUNT.sql_function(:id).as(:cnt), :year).group_by(:year)
+  @tags = $DB[:songs].filter{|i| i.year > 0}.select(:COUNT.sql_function(:id).as(:cnt), :year).group_by(:year)
   # required for tag_cloud partial
   @max = @tags.order(:cnt.desc).first[:cnt].to_i
   @min = @tags.order(:cnt.asc).first[:cnt].to_i
@@ -289,7 +306,7 @@ get '/year' do
   haml :browse_by_year
 end
 
-get %r{/year/(.*)} do |y|
+get %r{/year/([\d]{4})} do |y|
   @year = unescape y
   @songs = $DB[:songs].grep([:year], ["#{@year}%", {:case_insensitive => true}])
   haml :browse_by_year
@@ -366,4 +383,9 @@ end
 get '/' do
   @songs = $DB[:plays].join(:songs, :id => :song_id).group(:song_id).order(:played_at.desc).limit(10)
   haml :index
+end
+
+get '/now_playing' do
+  @current_song = $DB[:plays].select(:song_id.as(:id), :title, :artist, :album, :genre, :year).join(:songs, :id => :song_id).order(:played_at.desc).first
+  "#{@current_song[:title]} by #{@current_song[:artist]}"
 end
